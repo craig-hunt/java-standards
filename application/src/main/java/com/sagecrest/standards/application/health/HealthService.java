@@ -53,7 +53,11 @@ public final class HealthService {
     } catch (ExecutionException failed) {
       return ReadinessCheck.unavailable(failed.getCause());
     } catch (InterruptedException interrupted) {
-      // Restoring the flag is what lets the caller up the stack notice the
+      // Cancel first. Returning without it would leave the probe running on its own
+      // thread, still holding the connection it borrowed, after the caller has given
+      // up waiting for the answer.
+      attempt.cancel(INTERRUPT_THE_PROBE);
+      // Then restore the flag, which is what lets the caller up the stack notice the
       // interrupt. Swallowing it strands a shutdown signal here.
       Thread.currentThread().interrupt();
       return ReadinessCheck.unavailable(interrupted);

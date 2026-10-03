@@ -9,6 +9,14 @@ import com.sagecrest.standards.domain.tasks.TaskId;
 import com.sagecrest.standards.domain.tasks.TaskItem;
 import com.sagecrest.standards.domain.tasks.TaskTitle;
 import com.sagecrest.standards.infrastructure.persistence.PostgresFixture;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +30,17 @@ class JdbcTaskStoreIT extends PostgresFixture {
   private static final long NOTHING_DELETED = 0L;
   private static final int TWO_ROWS = 2;
 
-  private final JdbcTaskStore store = new JdbcTaskStore(database());
+  private static final String SQL_READ_OUTBOX =
+      "SELECT type, payload, occurred_at FROM outbox ORDER BY occurred_at";
+  private static final String COLUMN_TYPE = "type";
+  private static final String COLUMN_PAYLOAD = "payload";
+  private static final String COLUMN_OCCURRED_AT = "occurred_at";
+  private static final String EXPECTED_WIRE_NAME = "TaskCompleted";
+
+  private static final Instant COMPLETED_AT = Instant.parse("2026-10-03T14:45:12Z");
+
+  private final JdbcTaskStore store =
+      new JdbcTaskStore(database(), Clock.fixed(COMPLETED_AT, ZoneOffset.UTC));
 
   @Test
   @DisplayName("hands back the identifier the database assigned, in the same round trip")
@@ -108,11 +126,102 @@ class JdbcTaskStoreIT extends PostgresFixture {
   }
 
   @Test
+  @DisplayName("announces a completion in the transaction that caused it")
+  void announcesACompletion() {
+    TaskId id = store.create(new TaskTitle(FIRST)).id();
+
+    store.setCompleted(id, true);
+
+    assertThat(outboxTypes()).containsExactly(EXPECTED_WIRE_NAME);
+    assertThat(outboxPayload()).contains(FIRST, String.valueOf(id.value()));
+  }
+
+  @Test
+  @DisplayName("announces nothing when a task was already completed")
+  void announcesNothingOnARepeat() {
+    TaskId id = store.create(new TaskTitle(FIRST)).id();
+    store.setCompleted(id, true);
+
+    store.setCompleted(id, true);
+
+    assertThat(outboxTypes())
+        .as("a repeated request says nothing new, so it adds nothing to the backlog")
+        .containsExactly(EXPECTED_WIRE_NAME);
+  }
+
+  @Test
+  @DisplayName("announces nothing when a task is reopened, because no event describes that")
+  void announcesNothingOnReopening() {
+    TaskId id = store.create(new TaskTitle(FIRST)).id();
+    store.setCompleted(id, true);
+
+    store.setCompleted(id, false);
+
+    assertThat(outboxTypes()).containsExactly(EXPECTED_WIRE_NAME);
+  }
+
+  @Test
+  @DisplayName("announces nothing for a task that was never completed")
+  void announcesNothingWithoutACompletion() {
+    store.create(new TaskTitle(FIRST));
+
+    assertThat(outboxTypes()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("stamps the event with the injected clock rather than the wall clock")
+  void stampsTheEventWithTheInjectedClock() {
+    store.setCompleted(store.create(new TaskTitle(FIRST)).id(), true);
+
+    assertThat(outboxOccurredAt()).isEqualTo(COMPLETED_AT);
+  }
+
+  @Test
   @DisplayName("isolates each test, so an earlier one cannot seed a later one")
   void isolatesEachTest() {
     store.create(new TaskTitle(FIRST));
     store.create(new TaskTitle(SECOND));
 
     assertThat(store.list()).hasSize(TWO_ROWS);
+  }
+
+  private static List<String> outboxTypes() {
+    return database()
+        .query(
+            connection -> {
+              try (PreparedStatement read = connection.prepareStatement(SQL_READ_OUTBOX);
+                  ResultSet rows = read.executeQuery()) {
+                List<String> types = new ArrayList<>();
+                while (rows.next()) {
+                  types.add(rows.getString(COLUMN_TYPE));
+                }
+                return List.copyOf(types);
+              }
+            });
+  }
+
+  private static String outboxPayload() {
+    return readOutbox(rows -> rows.getString(COLUMN_PAYLOAD));
+  }
+
+  private static Instant outboxOccurredAt() {
+    return readOutbox(rows -> rows.getObject(COLUMN_OCCURRED_AT, OffsetDateTime.class).toInstant());
+  }
+
+  private static <T> T readOutbox(OutboxRead<T> read) {
+    return database()
+        .query(
+            connection -> {
+              try (PreparedStatement query = connection.prepareStatement(SQL_READ_OUTBOX);
+                  ResultSet rows = query.executeQuery()) {
+                rows.next();
+                return read.from(rows);
+              }
+            });
+  }
+
+  @FunctionalInterface
+  private interface OutboxRead<T> {
+    T from(ResultSet rows) throws java.sql.SQLException;
   }
 }

@@ -15,7 +15,7 @@ COPY application/pom.xml application/
 COPY infrastructure/pom.xml infrastructure/
 COPY web/pom.xml web/
 COPY conventions/pom.xml conventions/
-RUN mvn --batch-mode --no-transfer-progress -pl domain,application,infrastructure,web \
+RUN mvn --batch-mode --no-transfer-progress -pl .,domain,application,infrastructure,web \
         dependency:go-offline
 
 COPY domain/src domain/src
@@ -30,7 +30,12 @@ COPY web/src web/src
 # install rather than package: dependency:copy-dependencies below resolves the
 # sibling modules from the local repository, and package leaves them only in
 # each module's target directory.
-RUN mvn --batch-mode --no-transfer-progress -pl domain,application,infrastructure,web \
+#
+# The leading "." installs the parent POM. Without it the next step fails while
+# reading infrastructure's descriptor, because resolving any module's parent
+# means resolving this POM and it was never installed. The conventions module is
+# left out: it carries only tests, and nothing in the image needs it.
+RUN mvn --batch-mode --no-transfer-progress -pl .,domain,application,infrastructure,web \
         -DskipTests install
 
 # The dependencies are copied beside the jar rather than shaded into it, so a

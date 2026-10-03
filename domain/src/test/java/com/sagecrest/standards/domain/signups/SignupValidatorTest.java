@@ -33,7 +33,7 @@ class SignupValidatorTest {
     assertThat(outcome.valid()).isTrue();
     assertThat(outcome.problems()).isEmpty();
     assertThat(outcome.value()).isPresent();
-    assertThat(outcome.value().orElseThrow().seats()).isEqualTo(MANY_SEATS);
+    assertThat(outcome.value().orElseThrow().seats().value()).isEqualTo(MANY_SEATS);
   }
 
   @Test
@@ -43,7 +43,8 @@ class SignupValidatorTest {
         new SignupRequest(
             PADDED_NAME, EMAIL, SignupConstants.PLAN_STARTER, MANY_SEATS, NOTES, true);
 
-    assertThat(SignupValidator.validate(padded).value().orElseThrow().fullName()).isEqualTo(NAME);
+    assertThat(SignupValidator.validate(padded).value().orElseThrow().fullName().value())
+        .isEqualTo(NAME);
   }
 
   @ParameterizedTest
@@ -118,7 +119,8 @@ class SignupValidatorTest {
     SignupValidation outcome = SignupValidator.validate(request);
 
     assertThat(outcome.valid()).isTrue();
-    assertThat(outcome.value().orElseThrow().seats()).isEqualTo(SignupConstants.DEFAULT_SEATS);
+    assertThat(outcome.value().orElseThrow().seats().value())
+        .isEqualTo(SignupConstants.DEFAULT_SEATS);
   }
 
   @Test

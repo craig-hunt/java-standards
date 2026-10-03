@@ -22,14 +22,32 @@ public final class InfrastructureConstants {
   public static final String COLUMN_TYPE = "type";
   public static final String COLUMN_PAYLOAD = "payload";
   public static final String COLUMN_OCCURRED_AT = "occurred_at";
+  public static final String COLUMN_WAS_COMPLETED = "was_completed";
 
   public static final String SQL_LIST_TASKS = "SELECT id, title, completed FROM tasks ORDER BY id";
 
   public static final String SQL_INSERT_TASK =
       "INSERT INTO tasks (title, completed) VALUES (?, false) RETURNING id, title, completed";
 
+  /**
+   * Sets a task's completion and reports what it was beforehand.
+   *
+   * <p>The prior value decides whether an event is due, and reading it in a separate statement
+   * would leave a window in which another transaction changed it. The {@code FOR UPDATE} in the
+   * common table expression takes the row lock before the update, so the before-and-after pair this
+   * returns describes one atomic step.
+   */
   public static final String SQL_SET_TASK_COMPLETED =
-      "UPDATE tasks SET completed = ? WHERE id = ? RETURNING id, title, completed";
+      """
+      WITH previous AS (
+        SELECT id, completed FROM tasks WHERE id = ? FOR UPDATE
+      )
+      UPDATE tasks
+      SET completed = ?
+      FROM previous
+      WHERE tasks.id = previous.id
+      RETURNING tasks.id, tasks.title, tasks.completed, previous.completed AS was_completed\
+      """;
 
   public static final String SQL_DELETE_TASK = "DELETE FROM tasks WHERE id = ?";
 

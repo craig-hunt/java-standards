@@ -1,72 +1,60 @@
 package com.sagecrest.standards.domain.signups;
 
-import com.sagecrest.standards.domain.text.TextLength;
+import com.sagecrest.standards.domain.errors.ValidationException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Pattern;
+import java.util.function.Supplier;
 
 /**
  * Validates a submitted signup, reporting every field problem at once.
  *
  * <p>Returning on the first problem would make a form correct one field per round trip. Every check
  * runs, so a caller marks all of them together.
+ *
+ * <p>Each check is the value type's own constructor rather than a copy of its rule. The constructor
+ * throws a failure carrying the one field it concerns, and this merges those maps, so a sentence
+ * shown to a user is written in exactly one place. Building the types to find out whether they
+ * build uses an exception as a result, which is worth saying out loud; the alternative was the same
+ * rule expressed twice, once to report it and once to enforce it, and two expressions of one rule
+ * drift.
  */
 public final class SignupValidator {
-
-  private static final String ABSENT = "";
-
-  private static final Pattern EMAIL = Pattern.compile(SignupConstants.EMAIL_PATTERN);
 
   public static SignupValidation validate(SignupRequest request) {
     Map<String, String> problems = new HashMap<>();
 
-    String name = trimmed(request.fullName());
-    if (name.isEmpty()) {
-      problems.put(SignupConstants.FIELD_FULL_NAME, SignupConstants.MSG_NAME_REQUIRED);
-    }
-
-    String email = trimmed(request.email());
-    if (email.isEmpty()) {
-      problems.put(SignupConstants.FIELD_EMAIL, SignupConstants.MSG_EMAIL_REQUIRED);
-    } else if (!EMAIL.matcher(email).matches()) {
-      problems.put(SignupConstants.FIELD_EMAIL, SignupConstants.MSG_EMAIL_INVALID);
-    }
-
-    Plan plan = new Plan(request.plan());
-    if (plan.isAbsent()) {
-      problems.put(SignupConstants.FIELD_PLAN, SignupConstants.MSG_PLAN_REQUIRED);
-    } else if (!plan.known()) {
-      problems.put(SignupConstants.FIELD_PLAN, SignupConstants.MSG_PLAN_UNKNOWN);
-    }
-
-    int seats = SignupConstants.DEFAULT_SEATS;
-    if (request.seats() != null) {
-      seats = request.seats();
-      if (seats < SignupConstants.MIN_SEATS) {
-        problems.put(SignupConstants.FIELD_SEATS, SignupConstants.MSG_SEATS_INVALID);
-      }
-    }
-
-    String notes = trimmed(request.notes());
-    if (TextLength.countCodePoints(notes) > SignupConstants.MAX_NOTES_LENGTH) {
-      problems.put(SignupConstants.FIELD_NOTES, SignupConstants.MSG_NOTES_TOO_LONG);
-    }
+    Optional<FullName> name = attempt(() -> new FullName(request.fullName()), problems);
+    Optional<EmailAddress> email = attempt(() -> new EmailAddress(request.email()), problems);
+    Optional<Plan> plan = attempt(() -> new Plan(request.plan()), problems);
+    Optional<Seats> seats = attempt(() -> Seats.of(request.seats()), problems);
+    Optional<Notes> notes = attempt(() -> new Notes(request.notes()), problems);
 
     if (!request.acceptTerms()) {
-      problems.put(SignupConstants.FIELD_ACCEPT_TERMS, SignupConstants.MSG_TERMS_REQUIRED);
+      problems.putAll(SignupErrors.termsRequired().fields());
     }
 
-    Optional<Signup> validated =
-        problems.isEmpty()
-            ? Optional.of(new Signup(name, email, plan, seats, notes))
-            : Optional.empty();
-    return new SignupValidation(validated, problems);
+    if (!problems.isEmpty()) {
+      return new SignupValidation(Optional.empty(), problems);
+    }
+    return new SignupValidation(
+        Optional.of(
+            new Signup(
+                name.orElseThrow(),
+                email.orElseThrow(),
+                plan.orElseThrow(),
+                seats.orElseThrow(),
+                notes.orElseThrow())),
+        problems);
   }
 
-  private static String trimmed(String raw) {
-    return Objects.requireNonNullElse(raw, ABSENT).trim();
+  private static <T> Optional<T> attempt(Supplier<T> build, Map<String, String> problems) {
+    try {
+      return Optional.of(build.get());
+    } catch (ValidationException rejected) {
+      problems.putAll(rejected.fields());
+      return Optional.empty();
+    }
   }
 
   private SignupValidator() {}

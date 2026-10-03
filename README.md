@@ -52,6 +52,15 @@ Framework round-trips a key through its converter while deciding whether the key
 has been set. Nothing here maps through a converter, so each type keeps one
 constructor and no bypass.
 
+A `Signup` is built from a `FullName`, an `EmailAddress`, a `Plan`, a `Seats` and
+a `Notes`, not from strings and an int. That is the difference between a type
+that documents an invariant and one that holds it: the earlier shape let any
+caller assemble a signup around a blank email and hand it to the store, and
+relying on everyone to run the validator first is the arrangement this
+repository exists to argue against. `SignupValidator` still earns its place,
+because a constructor can only throw the first problem it finds and a form needs
+all of them.
+
 **4. Every literal with a meaning has a name.** Enforced by a test that parses
 every source file, main and test alike, and reports any string, number or
 character outside a `static final` initializer. Zero, one and the empty string
@@ -93,9 +102,14 @@ and exits. The API never migrates at startup, so two replicas starting together
 cannot run the same DDL at the same time.
 
 **12. State and the event announcing it commit together.** Recording a signup
-writes the signup row and the outbox row in one transaction. Either both land or
-neither does, so no consumer hears about a signup that failed to store and no
-stored signup goes unannounced.
+writes the signup row and the outbox row in one transaction, and so does
+completing a task. Either both land or neither does, so no consumer hears about
+a change that failed to store and no stored change goes unannounced.
+
+Completion announces on the transition only. The statement locks the row and
+returns what the flag was beforehand, so setting a completed task completed again
+adds nothing to the backlog, and reopening one announces nothing because no event
+here describes that.
 
 **13. Consumers absorb repeats.** The relay publishes after the commit, which
 makes delivery at-least-once: it can deliver a message and fail before recording

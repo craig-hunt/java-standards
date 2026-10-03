@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sagecrest.standards.application.events.FanOutEventDispatcher;
 import com.sagecrest.standards.application.ports.EventConsumer;
 import com.sagecrest.standards.domain.events.DomainEvent;
+import com.sagecrest.standards.domain.signups.EmailAddress;
+import com.sagecrest.standards.domain.signups.FullName;
+import com.sagecrest.standards.domain.signups.Notes;
 import com.sagecrest.standards.domain.signups.Plan;
+import com.sagecrest.standards.domain.signups.Seats;
 import com.sagecrest.standards.domain.signups.Signup;
 import com.sagecrest.standards.domain.signups.SignupConstants;
 import com.sagecrest.standards.infrastructure.InfrastructureConstants;
@@ -73,7 +77,13 @@ class OutboxPublisherIT extends PostgresFixture {
 
   private void recordASignup() {
     new JdbcSignupStore(database(), AT_RECORDING)
-        .save(new Signup(NAME, EMAIL, new Plan(SignupConstants.PLAN_GROWTH), SEATS, NOTES));
+        .save(
+            new Signup(
+                new FullName(NAME),
+                new EmailAddress(EMAIL),
+                new Plan(SignupConstants.PLAN_GROWTH),
+                new Seats(SEATS),
+                new Notes(NOTES)));
   }
 
   @Test

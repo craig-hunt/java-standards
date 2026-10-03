@@ -4,11 +4,12 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * The plan a signup names, kept as the value the form submitted.
+ * The plan a signup names.
  *
- * <p>An enum would collapse an absent plan and an unrecognized one into the same undefined member,
- * and the form shows a different sentence for each. Holding the submitted text keeps that
- * distinction available to the validator.
+ * <p>It holds the submitted text rather than an enum constant, because an absent plan and an
+ * unrecognized one need different sentences and an enum collapses both into the same undefined
+ * member. The constructor keeps that distinction by throwing a different failure for each, so the
+ * rule lives here once instead of in the validator and the type both.
  */
 public record Plan(String value) {
 
@@ -21,15 +22,13 @@ public record Plan(String value) {
           SignupConstants.PLAN_ENTERPRISE);
 
   public Plan {
-    value = Objects.requireNonNullElse(value, ABSENT);
-  }
-
-  public boolean isAbsent() {
-    return value.isEmpty();
-  }
-
-  public boolean known() {
-    return KNOWN.contains(value);
+    value = Objects.requireNonNullElse(value, ABSENT).trim();
+    if (value.isEmpty()) {
+      throw SignupErrors.planRequired();
+    }
+    if (!KNOWN.contains(value)) {
+      throw SignupErrors.planUnknown();
+    }
   }
 
   @Override

@@ -23,11 +23,13 @@ public abstract class PostgresFixture {
   private static final String SQL_TRUNCATE =
       "TRUNCATE tasks, signups, outbox RESTART IDENTITY CASCADE";
 
+  private static final PostgreSQLContainer<?> POSTGRES;
   private static final Database DATABASE;
 
   static {
     PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(IMAGE);
     postgres.start();
+    POSTGRES = postgres;
 
     // The same call the migrator makes. A fixture that built its own pool would
     // verify a configuration no deployment uses, and would leave the real one
@@ -41,6 +43,17 @@ public abstract class PostgresFixture {
 
   protected static Database database() {
     return DATABASE;
+  }
+
+  /**
+   * The running container, for the one test that needs to open a pool of its own.
+   *
+   * <p>Exposed rather than started a second time, because a second container would double the
+   * slowest part of the suite to verify settings that have nothing to do with which database
+   * answers.
+   */
+  protected static PostgreSQLContainer<?> container() {
+    return POSTGRES;
   }
 
   /**

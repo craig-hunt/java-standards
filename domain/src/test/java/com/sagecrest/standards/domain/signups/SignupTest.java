@@ -21,7 +21,12 @@ class SignupTest {
   private static final String EXPECTED_SUMMARY = "Ada Lovelace on the Growth plan, 3 seat(s).";
 
   private static Signup signup() {
-    return new Signup(NAME, EMAIL, new Plan(SignupConstants.PLAN_GROWTH), SEATS, NOTES);
+    return new Signup(
+        new FullName(NAME),
+        new EmailAddress(EMAIL),
+        new Plan(SignupConstants.PLAN_GROWTH),
+        new Seats(SEATS),
+        new Notes(NOTES));
   }
 
   @Test

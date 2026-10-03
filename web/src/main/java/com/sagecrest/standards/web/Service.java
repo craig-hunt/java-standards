@@ -80,8 +80,7 @@ public final class Service implements AutoCloseable {
     Database database = new Database(pool);
 
     Clock clock = Clock.systemUTC();
-
-    TaskService tasks = new TaskService(new JdbcTaskStore(database));
+    TaskService tasks = new TaskService(new JdbcTaskStore(database, clock));
     SignupService signups = new SignupService(new JdbcSignupStore(database, clock));
     InventoryService inventory = new InventoryService(new JdbcInventoryStore(database));
 

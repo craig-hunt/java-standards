@@ -19,8 +19,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -85,6 +83,8 @@ class ServiceIT {
   private static final String BODY_EMPTY_OBJECT = "{}";
   private static final String BODY_UNKNOWN_MEMBER = "{\"title\":\"x\",\"colour\":\"red\"}";
   private static final String BODY_NOT_JSON = "{";
+  private static final String BODY_TWO_OBJECTS = "{\"title\":\"a\"}{\"title\":\"b\"}";
+  private static final String BODY_JSON_NULL = "null";
   private static final String BODY_SIGNUP =
       """
       {"fullName":"%s","email":"%s","plan":"%s","seats":2,"notes":"","acceptTerms":true}\
@@ -97,19 +97,42 @@ class ServiceIT {
   private static final int EXPECTED_PROBLEMS = 5;
   private static final int ONE = 1;
   private static final int TWO = 2;
+  private static final int TEN = 10;
   private static final int ZERO = 0;
 
   private static final ObjectMapper JSON = new ObjectMapper();
+
+  /**
+   * A deadline on the whole request, not only on the connection.
+   *
+   * <p>A connect timeout alone leaves {@code send} waiting forever on a server that accepted the
+   * connection and then never answered. Under mutation analysis that is not hypothetical: a mutant
+   * that breaks the response write produces exactly that, the test hangs, and PIT scores the
+   * timeout as a kill. The gate then reports a healthy number for mutants nothing actually caught.
+   *
+   * <p>Generous rather than tight. A first request against a cold, instrumented JVM takes far
+   * longer than a warm one, and a deadline sized for the warm case fails the analysis run itself.
+   * The point is to bound a hang, not to assert a latency.
+   */
+  private static final Duration REQUEST_DEADLINE = Duration.ofSeconds(TEN);
+
   private static final HttpClient CLIENT =
       HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(TWO)).build();
 
-  private static PostgreSQLContainer<?> postgres;
-  private static Service service;
-  private static int port;
+  private static final int PORT;
 
-  @BeforeAll
-  static void startService() throws IOException {
-    postgres = new PostgreSQLContainer<>(IMAGE);
+  /**
+   * One container and one server for the whole run, started in a static block.
+   *
+   * <p>Not {@code @BeforeAll} with a matching {@code @AfterAll}. That shape starts a database and
+   * an HTTP server once per class per JVM, which is fine under Surefire and ruinous under PIT: a
+   * mutation analysis restarts the JVM repeatedly, and paying for a container each time made every
+   * minion exceed its deadline. PIT scores a timed-out mutant as killed, so the gate reported a
+   * healthy number for a module it had barely tested. Starting once and never stopping removes the
+   * cost; Ryuk removes the container when the run ends, and the server dies with the JVM.
+   */
+  static {
+    PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(IMAGE);
     postgres.start();
 
     // The migrator runs before the API, exactly as compose arranges it in a deployment.
@@ -121,26 +144,29 @@ class ServiceIT {
       new Schema(new Database(migration)).apply();
     }
 
-    service =
-        new Service(
-            Settings.from(
-                name ->
-                    switch (name) {
-                      case WebConstants.ENV_DATABASE_URL -> postgres.getJdbcUrl();
-                      case WebConstants.ENV_DATABASE_USER -> postgres.getUsername();
-                      case WebConstants.ENV_DATABASE_PASSWORD -> postgres.getPassword();
-                      case WebConstants.ENV_API_TOKEN -> TOKEN;
-                      case WebConstants.ENV_PORT -> EPHEMERAL_PORT;
-                      default -> null;
-                    }));
-    service.start();
-    port = service.port();
+    Service service = started(postgres);
+    PORT = service.port();
   }
 
-  @AfterAll
-  static void stopService() {
-    service.close();
-    postgres.stop();
+  private static Service started(PostgreSQLContainer<?> postgres) {
+    try {
+      Service service =
+          new Service(
+              Settings.from(
+                  name ->
+                      switch (name) {
+                        case WebConstants.ENV_DATABASE_URL -> postgres.getJdbcUrl();
+                        case WebConstants.ENV_DATABASE_USER -> postgres.getUsername();
+                        case WebConstants.ENV_DATABASE_PASSWORD -> postgres.getPassword();
+                        case WebConstants.ENV_API_TOKEN -> TOKEN;
+                        case WebConstants.ENV_PORT -> EPHEMERAL_PORT;
+                        default -> null;
+                      }));
+      service.start();
+      return service;
+    } catch (IOException cannotBind) {
+      throw new IllegalStateException(cannotBind);
+    }
   }
 
   @Test
@@ -338,6 +364,24 @@ class ServiceIT {
   }
 
   @Test
+  @DisplayName("refuses a second object after the first rather than binding one and dropping one")
+  void refusesTrailingContent() throws Exception {
+    HttpResponse<String> response = post(WebConstants.PATH_TASKS, BODY_TWO_OBJECTS);
+
+    assertThat(response.statusCode()).isEqualTo(WebConstants.STATUS_BAD_REQUEST);
+    assertThat(body(response).get(FIELD_CODE).asText()).isEqualTo(ErrorConstants.CODE_INVALID_BODY);
+  }
+
+  @Test
+  @DisplayName("treats a body of JSON null as malformed, not as a server fault")
+  void refusesAJsonNullBody() throws Exception {
+    HttpResponse<String> response = post(WebConstants.PATH_TASKS, BODY_JSON_NULL);
+
+    assertThat(response.statusCode()).isEqualTo(WebConstants.STATUS_BAD_REQUEST);
+    assertThat(body(response).get(FIELD_CODE).asText()).isEqualTo(ErrorConstants.CODE_INVALID_BODY);
+  }
+
+  @Test
   @DisplayName("answers a path nobody serves with the same problem shape as everything else")
   void answersAnUnknownPathWithAProblem() throws Exception {
     HttpResponse<String> response = get(UNKNOWN_PATH);
@@ -393,7 +437,8 @@ class ServiceIT {
   }
 
   private static HttpRequest.Builder request(String path) {
-    return HttpRequest.newBuilder(URI.create(LOCALHOST.formatted(port, path)));
+    return HttpRequest.newBuilder(URI.create(LOCALHOST.formatted(PORT, path)))
+        .timeout(REQUEST_DEADLINE);
   }
 
   private static HttpRequest.Builder authorized(String path) {

@@ -5,8 +5,7 @@ import com.sagecrest.standards.domain.events.SignupRecorded;
 import com.sagecrest.standards.domain.signups.Signup;
 import com.sagecrest.standards.domain.signups.SignupId;
 import com.sagecrest.standards.infrastructure.InfrastructureConstants;
-import com.sagecrest.standards.infrastructure.events.OutboxMessage;
-import com.sagecrest.standards.infrastructure.events.OutboxSerializer;
+import com.sagecrest.standards.infrastructure.events.OutboxWriter;
 import com.sagecrest.standards.infrastructure.persistence.Columns;
 import com.sagecrest.standards.infrastructure.persistence.Database;
 import com.sagecrest.standards.infrastructure.persistence.InfrastructureException;
@@ -50,7 +49,7 @@ public final class JdbcSignupStore implements SignupStore {
           Instant now = clock.instant();
           SignupId id = insertSignup(connection, signup, now);
           SignupRecorded recorded = signup.recorded(id, UUID.randomUUID(), now);
-          insertOutbox(connection, OutboxSerializer.toRow(recorded));
+          OutboxWriter.write(connection, recorded);
           return id;
         });
   }
@@ -59,11 +58,11 @@ public final class JdbcSignupStore implements SignupStore {
       throws SQLException {
     try (PreparedStatement insert =
         connection.prepareStatement(InfrastructureConstants.SQL_INSERT_SIGNUP)) {
-      insert.setString(Columns.FIRST, signup.fullName());
-      insert.setString(Columns.SECOND, signup.email());
+      insert.setString(Columns.FIRST, signup.fullName().value());
+      insert.setString(Columns.SECOND, signup.email().value());
       insert.setString(Columns.THIRD, signup.plan().value());
-      insert.setInt(Columns.FOURTH, signup.seats());
-      insert.setString(Columns.FIFTH, signup.notes());
+      insert.setInt(Columns.FOURTH, signup.seats().value());
+      insert.setString(Columns.FIFTH, signup.notes().value());
       insert.setObject(Columns.SIXTH, utc(now));
       try (ResultSet rows = insert.executeQuery()) {
         if (!rows.next()) {
@@ -71,17 +70,6 @@ public final class JdbcSignupStore implements SignupStore {
         }
         return new SignupId(rows.getLong(InfrastructureConstants.COLUMN_ID));
       }
-    }
-  }
-
-  private static void insertOutbox(Connection connection, OutboxMessage row) throws SQLException {
-    try (PreparedStatement insert =
-        connection.prepareStatement(InfrastructureConstants.SQL_INSERT_OUTBOX)) {
-      insert.setObject(Columns.FIRST, row.eventId());
-      insert.setString(Columns.SECOND, row.type());
-      insert.setString(Columns.THIRD, row.payload());
-      insert.setObject(Columns.FOURTH, utc(row.occurredAt()));
-      insert.executeUpdate();
     }
   }
 

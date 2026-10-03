@@ -3,7 +3,11 @@ package com.sagecrest.standards.application.signups;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sagecrest.standards.application.ports.SignupStore;
+import com.sagecrest.standards.domain.signups.EmailAddress;
+import com.sagecrest.standards.domain.signups.FullName;
+import com.sagecrest.standards.domain.signups.Notes;
 import com.sagecrest.standards.domain.signups.Plan;
+import com.sagecrest.standards.domain.signups.Seats;
 import com.sagecrest.standards.domain.signups.Signup;
 import com.sagecrest.standards.domain.signups.SignupConfirmation;
 import com.sagecrest.standards.domain.signups.SignupConstants;
@@ -33,7 +37,12 @@ class SignupServiceTest {
   }
 
   private static Signup signup() {
-    return new Signup(NAME, EMAIL, new Plan(SignupConstants.PLAN_GROWTH), SEATS, NOTES);
+    return new Signup(
+        new FullName(NAME),
+        new EmailAddress(EMAIL),
+        new Plan(SignupConstants.PLAN_GROWTH),
+        new Seats(SEATS),
+        new Notes(NOTES));
   }
 
   @Test

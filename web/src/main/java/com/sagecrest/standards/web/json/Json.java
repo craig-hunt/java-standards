@@ -19,6 +19,11 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>The read is capped. {@code readAllBytes} on a request body is an invitation to send a stream
  * that never ends, and the server would hold memory until it died rather than answering 400.
+ *
+ * <p>Trailing content fails too. Jackson reads the first value and stops, so a body of {@code
+ * {"title":"a"}{"title":"b"}} would bind the first object and discard the second without a word.
+ * The route's contract says one JSON object, and a client sending two has misunderstood something
+ * it should be told about.
  */
 public final class Json {
 
@@ -26,6 +31,7 @@ public final class Json {
       JsonMapper.builder()
           .addModule(new JavaTimeModule())
           .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+          .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
           .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
           .build();
 
@@ -42,11 +48,19 @@ public final class Json {
   }
 
   public static <T> T read(InputStream body, Class<T> shape) {
+    T bound;
     try {
-      return MAPPER.readValue(bounded(body), shape);
+      bound = MAPPER.readValue(bounded(body), shape);
     } catch (IOException unreadable) {
       throw new InvalidRequestBodyException(unreadable);
     }
+    if (bound == null) {
+      // A body of the four characters n-u-l-l is valid JSON and binds to null without
+      // complaint. Returning it would hand every endpoint a reference to dereference,
+      // and the mapper would answer 500 for what is plainly a malformed request.
+      throw new InvalidRequestBodyException();
+    }
+    return bound;
   }
 
   private static String bounded(InputStream body) throws IOException {

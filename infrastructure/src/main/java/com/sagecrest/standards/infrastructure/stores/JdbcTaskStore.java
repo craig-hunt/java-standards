@@ -6,13 +6,17 @@ import com.sagecrest.standards.domain.tasks.TaskId;
 import com.sagecrest.standards.domain.tasks.TaskItem;
 import com.sagecrest.standards.domain.tasks.TaskTitle;
 import com.sagecrest.standards.infrastructure.InfrastructureConstants;
+import com.sagecrest.standards.infrastructure.events.OutboxWriter;
 import com.sagecrest.standards.infrastructure.persistence.Columns;
 import com.sagecrest.standards.infrastructure.persistence.Database;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Tasks, in PostgreSQL.
@@ -26,13 +30,21 @@ import java.util.List;
  * <p>A write that matched no row raises the domain's not-found failure rather than answering
  * quietly. A silent no-op there is how a delete appears to succeed against an id that never
  * existed.
+ *
+ * <p>Completing a task writes the task row and the event announcing it in one transaction, for the
+ * same reason a signup does. Announcing it afterwards, outside the transaction, would let a crash
+ * between the two leave a completed task nobody was told about.
  */
 public final class JdbcTaskStore implements TaskStore {
 
-  private final Database database;
+  private static final int NOTHING_CHANGED = 0;
 
-  public JdbcTaskStore(Database database) {
+  private final Database database;
+  private final Clock clock;
+
+  public JdbcTaskStore(Database database, Clock clock) {
     this.database = database;
+    this.clock = clock;
   }
 
   @Override
@@ -63,16 +75,24 @@ public final class JdbcTaskStore implements TaskStore {
         });
   }
 
+  /**
+   * Sets completion, and announces it when a task becomes completed.
+   *
+   * <p>The event fires on the transition only. Setting a completed task completed again announces
+   * nothing: the outbox already tolerates a repeat, but manufacturing one on every idempotent
+   * request would make the backlog grow with messages that say nothing new. Marking a task
+   * incomplete announces nothing either, because no event here describes that.
+   */
   @Override
   public TaskItem setCompleted(TaskId id, boolean completed) {
     return database.inTransaction(
         connection -> {
-          try (PreparedStatement update =
-              connection.prepareStatement(InfrastructureConstants.SQL_SET_TASK_COMPLETED)) {
-            update.setBoolean(Columns.FIRST, completed);
-            update.setLong(Columns.SECOND, id.value());
-            return single(update);
+          Completion outcome = update(connection, id, completed);
+          if (outcome.becameCompleted()) {
+            OutboxWriter.write(
+                connection, outcome.task().completionRecorded(UUID.randomUUID(), clock.instant()));
           }
+          return outcome.task();
         });
   }
 
@@ -102,7 +122,29 @@ public final class JdbcTaskStore implements TaskStore {
         });
   }
 
-  private static final int NOTHING_CHANGED = 0;
+  /** The updated task, and whether this update is what completed it. */
+  private record Completion(TaskItem task, boolean wasCompleted) {
+
+    boolean becameCompleted() {
+      return task.completed() && !wasCompleted;
+    }
+  }
+
+  private static Completion update(Connection connection, TaskId id, boolean completed)
+      throws SQLException {
+    try (PreparedStatement statement =
+        connection.prepareStatement(InfrastructureConstants.SQL_SET_TASK_COMPLETED)) {
+      statement.setLong(Columns.FIRST, id.value());
+      statement.setBoolean(Columns.SECOND, completed);
+      try (ResultSet rows = statement.executeQuery()) {
+        if (!rows.next()) {
+          throw TaskErrors.notFound();
+        }
+        return new Completion(
+            read(rows), rows.getBoolean(InfrastructureConstants.COLUMN_WAS_COMPLETED));
+      }
+    }
+  }
 
   private static TaskItem single(PreparedStatement statement) throws SQLException {
     try (ResultSet rows = statement.executeQuery()) {
