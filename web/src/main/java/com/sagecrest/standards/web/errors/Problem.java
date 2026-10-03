@@ -19,6 +19,13 @@ public record Problem(
 
   private static final String TYPE_BLANK = "about:blank";
 
+  public Problem {
+    // Null stays null, because an absent fields member is how a client tells a
+    // failure with per-field problems from one without. Anything present is
+    // copied, so the map a caller still holds cannot change what was sent.
+    fields = fields == null ? null : Map.copyOf(fields);
+  }
+
   public static Problem of(int status, String title, String code, String detail) {
     return new Problem(TYPE_BLANK, title, status, detail, code, null);
   }

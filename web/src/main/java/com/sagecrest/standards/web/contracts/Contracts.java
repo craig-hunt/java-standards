@@ -38,6 +38,11 @@ public final class Contracts {
 
   /** A filtered task list with counts over the whole set. */
   public record TaskViewResponse(List<TaskResponse> tasks, int remaining, int total) {
+
+    public TaskViewResponse {
+      tasks = List.copyOf(tasks);
+    }
+
     public static TaskViewResponse from(TaskView view) {
       return new TaskViewResponse(
           view.tasks().stream().map(TaskResponse::from).toList(), view.remaining(), view.total());
@@ -63,6 +68,11 @@ public final class Contracts {
 
   /** Matching stock rows with counts. */
   public record InventoryResponse(List<InventoryItemResponse> items, int shown, int total) {
+
+    public InventoryResponse {
+      items = List.copyOf(items);
+    }
+
     public static InventoryResponse from(InventoryResult result) {
       return new InventoryResponse(
           result.items().stream().map(InventoryItemResponse::from).toList(),

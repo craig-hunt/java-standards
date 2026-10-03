@@ -43,12 +43,24 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
     <junit.version>5.10.2</junit.version>
-    <assertj.version>3.25.3</assertj.version>
+    <!-- 3.27.7 is the floor: GHSA-rqfh-9r24-8c9r, found by the dependency audit. -->
+    <assertj.version>3.27.7</assertj.version>
     <archunit.version>1.2.1</archunit.version>
     <javaparser.version>3.28.2</javaparser.version>
-    <slf4j.version>2.0.13</slf4j.version>
-    <logback.version>1.5.6</logback.version>
-    <jackson.version>2.17.1</jackson.version>
+    <slf4j.version>2.0.20</slf4j.version>
+    <!--
+      1.5.13 is the floor for logback-core, which arrives transitively with
+      logback-classic: six advisories, found only once the audit read a resolved
+      bill of materials rather than the POMs. 1.5.38 is the current 1.5 line,
+      which keeps slf4j on the 2.0 line with it.
+    -->
+    <logback.version>1.5.38</logback.version>
+    <!--
+      2.18.11 is the floor: the dependency audit reported eleven advisories against
+      2.17.1, the worst scoring 8.1. Both jackson artifacts read this property, so
+      they cannot drift apart.
+    -->
+    <jackson.version>2.18.11</jackson.version>
     <!--
       1.21.4, not 1.19.x: Docker Desktop 29 answers the older client's /info with
       a 400 and Testcontainers reports no valid Docker environment, which reads
@@ -57,7 +69,21 @@
       its own verification rather than a version bump.
     -->
     <testcontainers.version>1.21.4</testcontainers.version>
-    <postgresql.version>42.7.3</postgresql.version>
+    <!--
+      42.7.12 is the floor. The audit named 42.7.11 for GHSA-98qh-xjc8-98pq and
+      then, once there, named 42.7.12 for GHSA-j92g-9f8w-j867. A fixed version
+      reported for one advisory is not the floor for the package; only a clean
+      audit is.
+    -->
+    <postgresql.version>42.7.12</postgresql.version>
+    <!--
+      Pinned although nothing here depends on it directly. Testcontainers brings
+      it in, 1.24.0 carries two advisories, and 1.26.0 closes them. Raising a
+      transitive version is what central version management is for: the
+      alternative is waiting for the library above it to bump, and meanwhile the
+      audit is red and nobody can land anything.
+    -->
+    <commons.compress.version>1.28.0</commons.compress.version>
     <hikari.version>5.1.0</hikari.version>
 
     <compiler.plugin.version>3.13.0</compiler.plugin.version>
@@ -67,6 +93,8 @@
     <pitest.plugin.version>1.16.1</pitest.plugin.version>
     <pitest.junit5.version>1.2.1</pitest.junit5.version>
     <enforcer.plugin.version>3.4.1</enforcer.plugin.version>
+    <cyclonedx.plugin.version>2.9.3</cyclonedx.plugin.version>
+    <spotbugs.plugin.version>4.10.4.1</spotbugs.plugin.version>
 
     <!--
       The gate, not a target. 70% matches the Go and C# siblings, and the number
@@ -135,6 +163,11 @@
         <groupId>com.zaxxer</groupId>
         <artifactId>HikariCP</artifactId>
         <version>${hikari.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-compress</artifactId>
+        <version>${commons.compress.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -234,6 +267,59 @@
           <artifactId>maven-enforcer-plugin</artifactId>
           <version>${enforcer.plugin.version}</version>
         </plugin>
+
+        <plugin>
+          <groupId>com.github.spotbugs</groupId>
+          <artifactId>spotbugs-maven-plugin</artifactId>
+          <version>${spotbugs.plugin.version}</version>
+          <configuration>
+            <!--
+              The lint step. javac's own -Xlint catches what the compiler can see
+              from one file; this reads the bytecode and finds what it cannot,
+              which is the same division the Go sibling draws between go vet and
+              golangci-lint.
+
+              Max effort and the lowest threshold, because a static analyzer run
+              at its default settings reports the findings nobody would have
+              argued about anyway. Every exclusion lives in
+              spotbugs-exclude.xml with its reason, so a reader can see what the
+              analyzer was told to ignore rather than wondering what it missed.
+            -->
+            <effort>Max</effort>
+            <threshold>Low</threshold>
+            <excludeFilterFile>${maven.multiModuleProjectDirectory}/spotbugs-exclude.xml</excludeFilterFile>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.cyclonedx</groupId>
+          <artifactId>cyclonedx-maven-plugin</artifactId>
+          <version>${cyclonedx.plugin.version}</version>
+          <configuration>
+            <!--
+              One bill of materials for the whole reactor, so the audit sees the
+              resolved tree rather than each module's declared dependencies.
+              Scanning the POMs directly leaves the scanner unable to resolve
+              this project's own modules, and it then reports on what it managed
+              to read: an audit that misses every transitive dependency while
+              looking exactly like one that did not.
+
+              Deliberately not bound to a phase. It is a step in the verify
+              script, next to the scanner that consumes it, rather than a
+              side effect of building.
+            -->
+            <outputName>bom</outputName>
+            <outputFormat>json</outputFormat>
+            <!--
+              Test dependencies are audited too. A vulnerability in a test
+              library does not reach production, but it does reach every
+              developer's machine and the CI runner, which is where the code
+              that signs releases runs. The Go sibling audits its test code for
+              the same reason.
+            -->
+            <includeTestScope>true</includeTestScope>
+          </configuration>
+        </plugin>
       </plugins>
     </pluginManagement>
 
@@ -256,6 +342,24 @@
               <goal>check</goal>
             </goals>
             <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <!--
+              Bound to verify so one command runs it, and so a finding fails the
+              build rather than producing a report somebody might read.
+            -->
+            <id>lint</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
           </execution>
         </executions>
       </plugin>

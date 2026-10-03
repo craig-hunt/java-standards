@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What the static analyzer is told to ignore, and why.
+
+  One exclusion, for one pattern, in one situation. EI_EXPOSE_REP2 fires when a
+  constructor stores a reference a caller still holds. That is the correct
+  warning for a mutable value object and the wrong one for a constructor-injected
+  dependency: storing the port handed to a service is the whole mechanism, and
+  copying a DataSource or a TaskStore is neither possible nor meaningful.
+
+  It is scoped to constructors rather than switched off wholesale, so the same
+  pattern still fails on an accessor or on a setter. The four places where it was
+  reporting a real gap, records whose canonical constructor did not copy while
+  their factory did, were fixed rather than excluded.
+-->
+<FindBugsFilter>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Method name="&lt;init&gt;"/>
+    <Or>
+      <Class name="com.sagecrest.standards.application.tasks.TaskService"/>
+      <Class name="com.sagecrest.standards.application.signups.SignupService"/>
+      <Class name="com.sagecrest.standards.application.inventory.InventoryService"/>
+      <Class name="com.sagecrest.standards.application.health.HealthService"/>
+      <Class name="com.sagecrest.standards.application.events.FanOutEventDispatcher"/>
+      <Class name="com.sagecrest.standards.infrastructure.persistence.Database"/>
+      <Class name="com.sagecrest.standards.infrastructure.persistence.Schema"/>
+      <Class name="com.sagecrest.standards.infrastructure.stores.JdbcTaskStore"/>
+      <Class name="com.sagecrest.standards.infrastructure.stores.JdbcSignupStore"/>
+      <Class name="com.sagecrest.standards.infrastructure.stores.JdbcInventoryStore"/>
+      <Class name="com.sagecrest.standards.infrastructure.health.JdbcHealthProbe"/>
+      <Class name="com.sagecrest.standards.infrastructure.events.OutboxPublisher"/>
+      <Class name="com.sagecrest.standards.infrastructure.events.OutboxRelay"/>
+      <Class name="com.sagecrest.standards.web.endpoints.TaskEndpoints"/>
+      <Class name="com.sagecrest.standards.web.endpoints.SignupEndpoints"/>
+      <Class name="com.sagecrest.standards.web.endpoints.InventoryEndpoints"/>
+      <Class name="com.sagecrest.standards.web.endpoints.HealthEndpoints"/>
+      <Class name="com.sagecrest.standards.web.errors.FailureHandler"/>
+      <Class name="com.sagecrest.standards.web.auth.BearerTokenHandler"/>
+      <Class name="com.sagecrest.standards.web.routing.RequestIdHandler"/>
+    </Or>
+  </Match>
+</FindBugsFilter>

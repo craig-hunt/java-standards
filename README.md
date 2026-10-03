@@ -25,12 +25,15 @@ Every gate, in one command:
 ./scripts/verify.sh
 ```
 
-That needs JDK 21 and Maven 3.9 on PATH, plus a Docker daemon for the
-integration tests. On a machine without the Java toolchain:
+That needs JDK 21, Maven 3.9 and `osv-scanner` on PATH, plus a Docker daemon for
+the integration tests. On a machine without that toolchain:
 
 ```
 ./scripts/verify-in-docker.sh
 ```
+
+which builds `scripts/toolchain.Dockerfile`, pinning both Maven and the scanner,
+and runs the same `verify.sh` inside it.
 
 ## The standards
 
@@ -152,47 +155,75 @@ unfiltered value travels into both the log and a response header. It is removed
 from the logging context in a `finally`, so no thread stamps the next request
 with the previous one's identifier.
 
-**21. Warnings fail the build.** `-Xlint:all -Werror`, with one category off and
+**21. A static analyzer reads what the compiler cannot, and its findings fail
+the build.** SpotBugs at maximum effort and the lowest threshold, which is the
+same division of labor the Go sibling draws between `go vet` and
+`golangci-lint`: one sees a file, the other sees the program. Every exclusion
+sits in `spotbugs-exclude.xml` with its reason, so a reader can tell what the
+analyzer was told to ignore from what it did not find.
+
+It earned the place immediately. Eleven findings, all one pattern, and four were
+real: the records at the web edge copied their collections in their static
+factories but left the canonical constructor open, so an invariant the domain
+records hold was only half-held one layer out. The other seven were constructors
+storing an injected port, which is the mechanism rather than a leak, and they
+are excluded by name.
+
+**22. Warnings fail the build.** `-Xlint:all -Werror`, with one category off and
 its reason written where the exclusion lives. This is not decorative: it caught a
 generic-array warning in the conventions module and forced a better
 implementation.
 
-**22. One authority on formatting, bound to the build.** google-java-format
+**23. One authority on formatting, bound to the build.** google-java-format
 through Spotless, chosen for having no options worth arguing about.
 `verify` fails on an unformatted file rather than rewriting it, because a build
 that edits the tree produces different output on a second run. `scripts/format.sh`
 does the editing, on purpose.
 
-**23. Tests read as behavior statements, and mutation analysis checks that they
+**24. Tests read as behavior statements, and mutation analysis checks that they
 mean it.** PIT, failing the build under 70%. This is not a formality either:
 mutation analysis found that none of the `TaskId.parse` tests contained a `0` or
 a `9` in a non-leading position, so both ends of the digit-range check were
 untested while the suite was green.
 
-**24. Integration tests run against the real engine.** Testcontainers starts and
+**25. Integration tests run against the real engine.** Testcontainers starts and
 removes its own PostgreSQL. Everything worth testing in a store is
 engine-specific: `RETURNING`, `FOR UPDATE SKIP LOCKED`, `jsonb`, a partial index.
 A fake would agree with the code and disagree with production.
 
-**25. The wiring is one readable method.** No dependency-injection container.
+**26. The wiring is one readable method.** No dependency-injection container.
 Every adapter is constructed once, in order, where a reader can see which
 implementation satisfies which port. The first question anybody asks of a
 repository like this is exactly the one a container hides.
 
-**26. Packages are named for what they do.** A test rejects `util`, `helper`,
+**27. Packages are named for what they do.** A test rejects `util`, `helper`,
 `common`, `misc`, `impl` and the rest. A package nobody can describe is a package
 everything belongs in.
 
-**27. A concrete class is final.** A class nobody marked final can be subclassed
+**28. A concrete class is final.** A class nobody marked final can be subclassed
 to defeat the rule it was written to enforce. Make it final, or make it abstract
 on purpose.
 
-**28. Every version lives in one place.** The parent POM, the way
+**29. Every version lives in one place.** The parent POM, the way
 `Directory.Packages.props` works in the C# sibling. A module that pinned its own
 version would let two modules disagree about one dependency with nothing to say
 so.
 
-**29. Comments explain why, never what.** Names carry the what. The comments here
+**30. A known vulnerability in a dependency fails the build.** `osv-scanner`,
+reading the same OSV database the Go sibling's `govulncheck` does, over every
+module. It is not a formality: the first run reported 28 advisories across three
+pinned dependencies, 16 of them rated high, in versions this repository had
+already published.
+
+The tool choice was forced. `ossindex-maven-plugin` answers an anonymous request
+with 401, then logs the failure and lets the build pass, which is worse than no
+audit at all: a gate that cannot reach its database reports success. OWASP
+dependency-check needs an NVD API key to perform acceptably, and a gate that
+needs a credential is one a fork cannot run. The audit step also fails when the
+binary is absent, because an audit that quietly does not run is
+indistinguishable from one that found nothing.
+
+**31. Comments explain why, never what.** Names carry the what. The comments here
 record the reasoning a reader would otherwise have to reconstruct, and several of
 them exist because the obvious alternative is wrong in a way that is not obvious.
 
@@ -247,7 +278,7 @@ place where this repository disagrees about the standard.
   itself. The conventions carry over to Spring Boot unchanged; what would not
   carry over is a reader's ability to see them.
 
-- **Blocking ports instead of async signatures.** Standard 15. The C# ports
+- **Blocking ports instead of async signatures.** The C# ports
   return `Task` and take a `CancellationToken`; these return values and take
   neither.
 

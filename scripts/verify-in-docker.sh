@@ -15,10 +15,19 @@ set -euo pipefail
 
 readonly REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-readonly TOOLCHAIN_IMAGE='maven:3.9-eclipse-temurin-21'
+readonly TOOLCHAIN_IMAGE='java-standards-toolchain'
+readonly TOOLCHAIN_DOCKERFILE='scripts/toolchain.Dockerfile'
 readonly DEPENDENCY_CACHE='java-standards-m2'
 readonly DOCKER_SOCKET='/var/run/docker.sock'
 readonly HOST_ALIAS='host.docker.internal'
+
+# Built rather than pulled, because the gate needs Maven and osv-scanner in one
+# place and no published image carries both. Docker caches it, so this costs
+# nothing after the first run.
+docker build \
+  --file "${REPOSITORY_ROOT}/${TOOLCHAIN_DOCKERFILE}" \
+  --tag "${TOOLCHAIN_IMAGE}" \
+  "${REPOSITORY_ROOT}" > /dev/null
 
 exec docker run --rm \
   --volume "${REPOSITORY_ROOT}:/work" \
