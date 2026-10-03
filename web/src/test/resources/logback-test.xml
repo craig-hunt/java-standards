@@ -1,0 +1,14 @@
+<configuration>
+  <!-- Testcontainers and the driver are chatty enough to bury a failure. -->
+  <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%-5level %logger{20} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <logger name="org.testcontainers" level="WARN"/>
+  <logger name="com.github.dockerjava" level="WARN"/>
+  <logger name="com.zaxxer.hikari" level="WARN"/>
+  <root level="INFO">
+    <appender-ref ref="console"/>
+  </root>
+</configuration>

@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The build as data rather than as a program.
+
+  Maven over Gradle deliberately. A convention hidden inside build logic is a
+  convention nobody can audit, which is the opposite of what this repository
+  argues for, so the build stays declarative even where that costs verbosity.
+
+  Every version lives here and nowhere else, the way Directory.Packages.props
+  does in the C# sibling. A module that pinned its own version would let two
+  modules disagree about one dependency, and nothing would say so.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.sagecrest.standards</groupId>
+  <artifactId>java-standards</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>Java Standards</name>
+  <description>A reference implementation of the conventions, not a document describing them.</description>
+
+  <!--
+    Dependencies point inward, and the module order states it. domain knows
+    nothing of application; application owns the ports infrastructure
+    implements; web wires them. conventions depends on all of them because its
+    job is to assert that the direction holds.
+  -->
+  <modules>
+    <module>domain</module>
+    <module>application</module>
+    <module>infrastructure</module>
+    <module>web</module>
+    <module>conventions</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <junit.version>5.10.2</junit.version>
+    <assertj.version>3.25.3</assertj.version>
+    <archunit.version>1.2.1</archunit.version>
+    <javaparser.version>3.28.2</javaparser.version>
+    <slf4j.version>2.0.13</slf4j.version>
+    <logback.version>1.5.6</logback.version>
+    <jackson.version>2.17.1</jackson.version>
+    <!--
+      1.21.4, not 1.19.x: Docker Desktop 29 answers the older client's /info with
+      a 400 and Testcontainers reports no valid Docker environment, which reads
+      as a broken machine rather than as a stale dependency. Not 2.x either: that
+      major renames the BOM modules this build imports, so it is a migration with
+      its own verification rather than a version bump.
+    -->
+    <testcontainers.version>1.21.4</testcontainers.version>
+    <postgresql.version>42.7.3</postgresql.version>
+    <hikari.version>5.1.0</hikari.version>
+
+    <compiler.plugin.version>3.13.0</compiler.plugin.version>
+    <surefire.plugin.version>3.2.5</surefire.plugin.version>
+    <failsafe.plugin.version>3.2.5</failsafe.plugin.version>
+    <spotless.plugin.version>2.43.0</spotless.plugin.version>
+    <pitest.plugin.version>1.16.1</pitest.plugin.version>
+    <pitest.junit5.version>1.2.1</pitest.junit5.version>
+    <enforcer.plugin.version>3.4.1</enforcer.plugin.version>
+
+    <!--
+      The gate, not a target. 70% matches the Go and C# siblings, and the number
+      matters less than the build failing below it.
+    -->
+    <mutation.threshold>70</mutation.threshold>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>${junit.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.assertj</groupId>
+        <artifactId>assertj-core</artifactId>
+        <version>${assertj.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.github.javaparser</groupId>
+        <artifactId>javaparser-core</artifactId>
+        <version>${javaparser.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>${logback.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jsr310</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <version>${postgresql.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.zaxxer</groupId>
+        <artifactId>HikariCP</artifactId>
+        <version>${hikari.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${compiler.plugin.version}</version>
+          <configuration>
+            <compilerArgs>
+              <!--
+                A warning that does not fail the build is a warning nobody
+                reads. The C# sibling says this with TreatWarningsAsErrors; this
+                says it in javac's own vocabulary.
+
+                One category stays off. Throwable implements Serializable, so
+                -Xlint:serial demands a serialVersionUID on every exception
+                here. None of them ever crosses a serialization boundary: the
+                edge mapper turns them into problem-details JSON inside the same
+                process. Three magic constants satisfying a contract nothing
+                exercises would teach a reader to add a fourth without asking
+                why, so the exclusion lives here, once, with its reason.
+              -->
+              <arg>-Xlint:all,-serial</arg>
+              <arg>-Werror</arg>
+              <!--
+                Parameter names survive into the bytecode, which is what lets a
+                validation message name the argument a caller actually passed
+                rather than arg0.
+              -->
+              <arg>-parameters</arg>
+            </compilerArgs>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${surefire.plugin.version}</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${failsafe.plugin.version}</version>
+        </plugin>
+
+        <plugin>
+          <groupId>com.diffplug.spotless</groupId>
+          <artifactId>spotless-maven-plugin</artifactId>
+          <version>${spotless.plugin.version}</version>
+          <configuration>
+            <!--
+              One authority on formatting, so nobody argues about it in review.
+              google-java-format is chosen for having no options worth debating.
+            -->
+            <java>
+              <googleJavaFormat/>
+              <removeUnusedImports/>
+              <endWithNewline/>
+            </java>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.pitest</groupId>
+          <artifactId>pitest-maven</artifactId>
+          <version>${pitest.plugin.version}</version>
+          <configuration>
+            <!--
+              Visible here rather than passed as build arguments, so a reader
+              learns the gate from the build file the way stryker-config.json
+              states it in the C# sibling.
+            -->
+            <mutationThreshold>${mutation.threshold}</mutationThreshold>
+            <failWhenNoMutations>false</failWhenNoMutations>
+            <timestampedReports>false</timestampedReports>
+            <outputFormats>
+              <outputFormat>HTML</outputFormat>
+              <outputFormat>XML</outputFormat>
+            </outputFormats>
+          </configuration>
+          <dependencies>
+            <dependency>
+              <groupId>org.pitest</groupId>
+              <artifactId>pitest-junit5-plugin</artifactId>
+              <version>${pitest.junit5.version}</version>
+            </dependency>
+          </dependencies>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>${enforcer.plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+      </plugin>
+
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <!--
+              Bound to the build rather than offered as a command, so unformatted
+              code fails rather than waiting for someone to run a formatter.
+            -->
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <!--
+              Integration tests run on every verify, not behind a profile a
+              reader has to discover. A gate somebody has to opt into is a gate
+              that stops running the week after it is written.
+            -->
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce-toolchain</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <!--
+                  Stated rather than assumed. A build that silently accepted an
+                  older JDK would compile code whose language level the standards
+                  depend on, or fail with a message about syntax rather than
+                  about the toolchain.
+                -->
+                <requireJavaVersion>
+                  <version>[21,)</version>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.9,)</version>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

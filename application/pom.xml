@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Depends on domain and on nothing else that this repository builds.
+
+  It also depends on no framework. A service that imported a web framework to
+  describe what it does would make the rule it enforces untestable without that
+  framework, and would invite the framework's types into the signatures the
+  domain reads. The ports in this module are the only thing infrastructure is
+  allowed to see.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.sagecrest.standards</groupId>
+    <artifactId>java-standards</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>application</artifactId>
+  <name>Application</name>
+  <description>What the service does, and the ports it needs somebody else to implement.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.sagecrest.standards</groupId>
+      <artifactId>domain</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
