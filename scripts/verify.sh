@@ -34,7 +34,7 @@ announce() {
 # next module's analysis, and the failure arrives as a NoClassDefFoundError
 # about a class that is plainly there, which sends the reader looking in the
 # wrong place entirely.
-announce 'format, compile, lint, test, integration test, conventions'
+announce 'format, compile, lint, test, integration test, conventions, mutation'
 mvn "${MAVEN_FLAGS[@]}" verify org.pitest:pitest-maven:mutationCoverage
 
 # A known vulnerability in a dependency fails the build.

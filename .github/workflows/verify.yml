@@ -35,11 +35,11 @@ jobs:
 
       # The scanner the audit step in scripts/verify.sh calls.
       #
-      # The version is read out of scripts/toolchain.Dockerfile rather than
-      # written again here. Pinning it in two files is the drift the standard
-      # that every version lives in one place exists to prevent, and a scanner
-      # that differs between CI and a developer's machine produces an argument
-      # about whose run to believe.
+      # Verified against a digest pinned in scripts/osv-scanner.sha256 before it
+      # is made executable. A versioned download URL is not integrity: a release
+      # asset can be replaced, and fetching the checksum from that same release
+      # would only prove the artifact matches itself. The digest is in the
+      # repository, under review, which is what makes it evidence.
       #
       # Google publishes actions that run the scanner, not ones that install it.
       # Using those would scan twice and leave verify.sh unable to fail on the
@@ -48,13 +48,20 @@ jobs:
       - name: Install the pinned dependency scanner
         run: |
           set -euo pipefail
-          version=$(grep -oE 'osv-scanner:v[0-9]+\.[0-9]+\.[0-9]+' \
-            scripts/toolchain.Dockerfile | head -1 | cut -d: -f2)
+          read -r version digest < <(grep -v '^#' scripts/osv-scanner.sha256 | grep -v '^$')
           echo "osv-scanner ${version}"
+
+          # The version is read out of the same file as the digest, so the two
+          # cannot disagree, and neither is written twice.
+          asset="osv-scanner_linux_amd64"
+          curl -fsSL -o "${asset}" \
+            "https://github.com/google/osv-scanner/releases/download/${version}/${asset}"
+
+          echo "${digest}  ${asset}" | sha256sum --check --strict
+
           mkdir -p "${HOME}/.local/bin"
-          curl -fsSL -o "${HOME}/.local/bin/osv-scanner" \
-            "https://github.com/google/osv-scanner/releases/download/${version}/osv-scanner_linux_amd64"
-          chmod +x "${HOME}/.local/bin/osv-scanner"
+          install -m 0755 "${asset}" "${HOME}/.local/bin/osv-scanner"
+          rm -f "${asset}"
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
       # The runner already has a Docker daemon, so Testcontainers needs no

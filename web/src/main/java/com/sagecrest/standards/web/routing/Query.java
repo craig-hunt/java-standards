@@ -19,7 +19,7 @@ public record Query(Map<String, String> values) {
   public Query {
     // Copied here as well as in the factory. The factory is the way a request
     // reaches this type, but the canonical constructor is public, and a record
-    // whose invariant holds only on one of two paths in has no invariant.
+    // whose invariant holds on only one of two paths has no invariant.
     values = Map.copyOf(values);
   }
 
