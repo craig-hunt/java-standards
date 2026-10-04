@@ -1,0 +1,10 @@
+# The osv-scanner release asset CI downloads, and its digest.
+#
+# Pinned here rather than taken from the release's own checksum file: a checksum
+# published beside the artifact it describes proves only that the artifact
+# matches itself, so replacing both leaves the check passing. This file is under
+# review and version control, which is what makes it evidence.
+#
+# Bumping the scanner means changing the version in scripts/toolchain.Dockerfile
+# and the digest here. CI fails if they disagree with what it downloads.
+v2.6.0  ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108

@@ -1,8 +1,11 @@
 package com.sagecrest.standards.web.routing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sagecrest.standards.web.WebConstants;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +29,22 @@ class QueryTest {
 
   private static Query of(String path) {
     return Query.of(new FakeExchange(WebConstants.METHOD_GET, path));
+  }
+
+  @Test
+  @DisplayName("the canonical constructor copies too, not only the factory")
+  void theCanonicalConstructorCopies() {
+    Map<String, String> mutable = new HashMap<>();
+    mutable.put(WebConstants.QUERY_SEARCH, SEARCH);
+    Query query = new Query(mutable);
+
+    mutable.put(WebConstants.QUERY_SORT, SORT_COLUMN);
+
+    assertThat(query.get(WebConstants.QUERY_SORT))
+        .as("a request already parsed cannot gain a parameter afterwards")
+        .isNull();
+    assertThatThrownBy(() -> query.values().clear())
+        .isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test

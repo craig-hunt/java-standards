@@ -19,6 +19,19 @@ public record Problem(
 
   private static final String TYPE_BLANK = "about:blank";
 
+  public Problem {
+    // Absent and empty mean the same thing here, and both have to produce the
+    // same wire shape. A client distinguishes a failure carrying per-field
+    // problems from one without by whether the member is present, so writing
+    // an empty object would say there are field problems and then list none.
+    // The factory normalized this and the canonical constructor did not, which
+    // left the record's stated contract true on one of two paths in.
+    //
+    // Anything present is copied, so the map a caller still holds cannot change
+    // what was sent.
+    fields = fields == null || fields.isEmpty() ? null : Map.copyOf(fields);
+  }
+
   public static Problem of(int status, String title, String code, String detail) {
     return new Problem(TYPE_BLANK, title, status, detail, code, null);
   }

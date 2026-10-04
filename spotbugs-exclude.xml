@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What the static analyzer is told to ignore, and why.
+
+  Three suppressions, each naming one class, one field and one pattern.
+  EI_EXPOSE_REP2 fires when a constructor stores a reference a caller still
+  holds. That is the correct warning for a mutable value object and the wrong one
+  for a constructor-injected dependency: storing the port handed to a service is
+  the mechanism, and copying a DataSource or a TaskStore is neither possible nor
+  meaningful.
+
+  Scoped to the exact field rather than to the constructor. Suppressing a whole
+  constructor would also suppress a parameter added later that genuinely does
+  leak mutable state, and it would do so silently, which is the failure mode an
+  exclusion file is most likely to cause.
+
+  Only the three the analyzer actually reports are listed. An earlier version
+  named twenty classes, seventeen of which were never flagged, which reads as a
+  blanket switch-off wearing a list.
+
+  The four places where this pattern reported a real gap, records whose canonical
+  constructor did not copy while their factory did, were fixed rather than
+  excluded.
+-->
+<FindBugsFilter>
+  <Match>
+    <Class name="com.sagecrest.standards.application.tasks.TaskService"/>
+    <Field name="store"/>
+    <Method name="&lt;init&gt;"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.sagecrest.standards.infrastructure.persistence.Database"/>
+    <Field name="source"/>
+    <Method name="&lt;init&gt;"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.sagecrest.standards.web.endpoints.TaskEndpoints"/>
+    <Field name="service"/>
+    <Method name="&lt;init&gt;"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+</FindBugsFilter>
